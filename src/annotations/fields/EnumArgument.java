@@ -13,5 +13,4 @@ public @interface EnumArgument {
     String messageError();
 
     MapPair[] array();
-
 }

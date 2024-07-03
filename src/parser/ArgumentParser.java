@@ -2,10 +2,7 @@ package parser;
 
 
 import annotations.ArgumentsContainer;
-import annotations.fields.BoolArgument;
-import annotations.fields.EnumArgument;
-import annotations.fields.NotRequired;
-import annotations.fields.Argument;
+import annotations.fields.*;
 import parser.exception.ArgumentParserException;
 import parser.exception.ClassNotCorrectException;
 
@@ -13,6 +10,7 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
+import java.lang.reflect.Method;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -204,6 +202,25 @@ public class ArgumentParser {
                     field.set(obj, Float.parseFloat(value));
                 } else if (type == long.class) {
                     field.set(obj, Long.parseLong(value));
+                } else if (type.getSuperclass() == Enum.class) {
+
+                    // Fix: Clean this piece of code..
+                    final EnumArgument ann = field.getDeclaredAnnotation(EnumArgument.class);
+                    for (final MapPair mapPair : ann.array()) {
+                        if (value.equals(mapPair.key())) {
+                            try {
+                                final Method valueOfMethod = ann.enumClass().getMethod("valueOf", String.class);
+                                valueOfMethod.setAccessible(true);
+                                field.set(obj, valueOfMethod.invoke(null, mapPair.enumValue()));
+
+                            } catch (final NoSuchMethodException | InvocationTargetException ignored) {
+                                throw new AssertionError("Not expected error in calling valueOf method of Enum");
+                            }
+                        }
+                    }
+
+                    throw new ArgumentParserException(getMessageError(field));
+
                 } else {
                     final String message = String.format("Type %s not supported. Field: %s", type.getName(), field.getName());
                     throw new ClassNotCorrectException(message);
