@@ -3,6 +3,7 @@ package parser;
 
 import annotations.ArgumentsContainer;
 import annotations.fields.BoolArgument;
+import annotations.fields.EnumArgument;
 import annotations.fields.NotRequired;
 import annotations.fields.Argument;
 import parser.exception.ArgumentParserException;
@@ -17,6 +18,13 @@ import java.util.stream.Collectors;
 
 public class ArgumentParser {
 
+
+    private static final List<Class<? extends Annotation>> allAnnotations = List.of(
+            Argument.class,
+            BoolArgument.class,
+            EnumArgument.class
+    );
+
     private ArgumentParser() {
 
     }
@@ -28,11 +36,14 @@ public class ArgumentParser {
         }
     }
 
+
+    /// TODO: Runtime checking -> build checking
     private static void checkTypeField(final Field[] fields, final Class<? extends Annotation> annotation, final Class<?> expectedType) {
         final Set<Field> stringAnnotation = Arrays.stream(fields).filter(field -> field.isAnnotationPresent(annotation)).collect(Collectors.toSet());
         for (final Field field : stringAnnotation) {
             final Class<?> type = field.getType();
-            if (type != expectedType) {
+            /// We see on super class in case when clazz is enum
+            if (type != expectedType && type.getSuperclass() != expectedType) {
                 final String message = String.format("Field %s must be %s, but it is %s.", field.getName(), annotation.getName(), type.getName());
                 throw new ClassNotCorrectException(message);
             }
@@ -40,26 +51,40 @@ public class ArgumentParser {
     }
 
     private static void checkFields(final Field[] fields) {
-        //checkTypeField(fields, Argument.class, String.class);
+        /// Await new types
         checkTypeField(fields, BoolArgument.class, boolean.class);
+        checkTypeField(fields, EnumArgument.class, Enum.class);
     }
 
 
+    private static boolean isNeedField(final Field field) {
+        for (final Class<? extends Annotation> ann : allAnnotations) {
+            if (field.isAnnotationPresent(ann)) {
+                return true;
+            }
+        }
+        return false;
+    }
 
     private static Field[] getAllFields(final Class<?> clazz) {
         return Arrays.stream(clazz.getDeclaredFields())
-                .filter(field -> field.isAnnotationPresent(Argument.class) || field.isAnnotationPresent(BoolArgument.class))
+                .filter(ArgumentParser::isNeedField)
                 .toArray(Field[]::new);
     }
 
 
     private static String getKeyFromField(final Field field) {
-        /// FIXME: I don't know how to fix it...
-
-        if (field.isAnnotationPresent(Argument.class)) {
-            return field.getDeclaredAnnotation(Argument.class).value();
-        } else if (field.isAnnotationPresent(BoolArgument.class)) {
-            return field.getDeclaredAnnotation(BoolArgument.class).value();
+        for (final Class<? extends Annotation> clazz : allAnnotations) {
+            if (!field.isAnnotationPresent(clazz)) {
+                continue;
+            }
+            final Annotation annotation = field.getDeclaredAnnotation(clazz);
+            try {
+                return (String) clazz.getMethod("value").invoke(annotation);
+            } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException ignored) {
+                /// In this situation we can catch Exception I think
+                throw new AssertionError("Not expected error");
+            }
         }
 
         throw new AssertionError("Unexpected error in parser. Cause: Not map new Argument type.");
@@ -71,9 +96,10 @@ public class ArgumentParser {
         for (final Field field : fields) {
             final String key = getKeyFromField(field);
 
-            /// TODO: Create normal exception for this case. Write readable exception message
             if (map.containsKey(key)) {
-                throw new ClassNotCorrectException("Same key for fields " + field.getName() + " " + map.get(key).getName());
+                final String args = String.join(", ", field.getName(), map.get(key).getName());
+                final String message = String.format("Arguments can't have same keys. { %s } have key = %s", args, key);
+                throw new ClassNotCorrectException(message);
             }
             map.put(key, field);
         }
@@ -87,16 +113,14 @@ public class ArgumentParser {
             if (field.isAnnotationPresent(BoolArgument.class)) {
                 final BoolArgument ann = field.getDeclaredAnnotation(BoolArgument.class);
                 container.flags.put(field, ann.def());
-            } else if (field.isAnnotationPresent(Argument.class)) {
-                if (!field.isAnnotationPresent(NotRequired.class)) {
-                    final String message = String.format("No required argument: %s\nDescription= %s", pair.getKey(), getDescriptionField(field));
-                    throw new ArgumentParserException(message);
-                }
+            } else if (!field.isAnnotationPresent(NotRequired.class)) {
+                final String message = String.format("No required argument: %s\nDescription= %s", pair.getKey(), getMessageError(field));
+                throw new ArgumentParserException(message);
             }
         }
     }
 
-    /// TODO: make normal exception for different situations, write normal exception message
+    /// TODO: make normal exception for different situations
     private static Container createContainer(final Map<String, Field> map, final String[] args) throws ArgumentParserException {
         final Set<String> usedArguments = new HashSet<>(args.length);
         final Container container = new Container(new HashMap<>(), new HashMap<>());
@@ -141,14 +165,22 @@ public class ArgumentParser {
             throw new ClassNotCorrectException("Constructor of @ArgumentsContainer mustn't throw any exceptions");
         } catch (final NoSuchMethodException e) {
             throw new ClassNotCorrectException("@ArgumentsContainer must have constructor without parameters");
-        }  catch (final IllegalAccessException e) {
+        } catch (final IllegalAccessException e) {
             throw new AssertionError("Not expected error");
         }
     }
 
-    private static String getDescriptionField(final Field field) {
-        if (field.isAnnotationPresent(Argument.class)) {
-            return field.getDeclaredAnnotation(Argument.class).messageError();
+    private static String getMessageError(final Field field) {
+        try {
+            for (final Class<? extends Annotation> clazz : allAnnotations) {
+                if (!field.isAnnotationPresent(clazz)) {
+                    continue;
+                }
+                final Annotation annotation = field.getDeclaredAnnotation(clazz);
+                return (String) clazz.getMethod("messageError").invoke(annotation);
+            }
+        } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException ignored) {
+            throw new AssertionError("Not expected error");
         }
         throw new AssertionError("Not expected error");
     }
@@ -162,6 +194,8 @@ public class ArgumentParser {
             try {
                 field.setAccessible(true);
 
+
+                /// NOTE: how to fix this trash?
                 if (type == String.class) {
                     field.set(obj, value);
                 } else if (type == int.class) {
@@ -171,12 +205,12 @@ public class ArgumentParser {
                 } else if (type == long.class) {
                     field.set(obj, Long.parseLong(value));
                 } else {
-                    throw new ClassNotCorrectException("This type of field not supported");
-                    //throw new AssertionError("Not expected error.");
+                    final String message = String.format("Type %s not supported. Field: %s", type.getName(), field.getName());
+                    throw new ClassNotCorrectException(message);
                 }
 
             } catch (final NumberFormatException e) {
-                final String message = String.format("%s\nBut argument was: %s", getDescriptionField(field), value);
+                final String message = String.format("%s\nBut argument was: %s", getMessageError(field), value);
                 throw new ArgumentParserException(message);
             } catch (final IllegalAccessException e) {
                 /// Not expected because accessible is true
