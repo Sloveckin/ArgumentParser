@@ -34,7 +34,9 @@ public class ArgumentParser {
     }
 
 
-    private static void checkTypeField(final Set<Field> fields, final Class<? extends Annotation> annotation, final Class<?> expectedType) {
+    private static void checkTypeField(final Set<Field> fields,
+                                       final Class<? extends Annotation> annotation,
+                                       final Class<?> expectedType) {
         for (final Field field : fields) {
             final Class<?> type = field.getType();
             /// We see on super class in case when clazz is enum
@@ -229,6 +231,8 @@ public class ArgumentParser {
                     field.set(obj, Float.parseFloat(value));
                 } else if (type == long.class) {
                     field.set(obj, Long.parseLong(value));
+                } else if (type == double.class) {
+                    field.set(obj, Double.parseDouble(value));
                 } else if (type.getSuperclass() == Enum.class) {
 
                     // Fix: Clean this piece of code...
