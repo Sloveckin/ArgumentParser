@@ -1,7 +1,6 @@
 package parser;
 
 
-import annotations.ArgumentsContainer;
 import annotations.fields.*;
 import parser.exception.ArgumentParserException;
 import parser.exception.ClassNotCorrectException;
@@ -28,17 +27,16 @@ public class ArgumentParser {
     }
 
     private static void handleClassAnnotation(final Class<?> clazz) {
-        if (!clazz.isAnnotationPresent(ArgumentsContainer.class)) {
-            final String message = String.format("Class %s must have annotation @ArgumentsContainer", clazz.getName());
+        if (!clazz.isAnnotationPresent(annotations.Container.class)) {
+            final String message = String.format("Class %s must have annotation @Container", clazz.getName());
             throw new ClassNotCorrectException(message);
         }
     }
 
 
-    /// TODO: Runtime checking -> build checking
     private static void checkTypeField(final Field[] fields, final Class<? extends Annotation> annotation, final Class<?> expectedType) {
-        final Set<Field> stringAnnotation = Arrays.stream(fields).filter(field -> field.isAnnotationPresent(annotation)).collect(Collectors.toSet());
-        for (final Field field : stringAnnotation) {
+        final Set<Field> filterFields = Arrays.stream(fields).filter(field -> field.isAnnotationPresent(annotation)).collect(Collectors.toSet());
+        for (final Field field : filterFields) {
             final Class<?> type = field.getType();
             /// We see on super class in case when clazz is enum
             if (type != expectedType && type.getSuperclass() != expectedType) {
@@ -48,10 +46,41 @@ public class ArgumentParser {
         }
     }
 
+
+    private static boolean stringIsValidEnum(final Class<?> clazz, final String str) {
+        try {
+            final Method method = clazz.getMethod("valueOf", String.class);
+            method.setAccessible(true);
+            method.invoke(null, str);
+            return true;
+
+        } catch (final InvocationTargetException ignored) {
+            return false;
+        } catch (final NoSuchMethodException | IllegalAccessException e) {
+            throw new AssertionError("Not expected error. Cause: " + e.getMessage());
+        }
+    }
+
+    private static void checkEnums(final Field[] fields) {
+        final Set<Field> filterFields = Arrays.stream(fields).filter(field -> field.isAnnotationPresent(EnumArgument.class)).collect(Collectors.toSet());
+
+        for (final Field field : filterFields) {
+            final EnumArgument annotation = field.getDeclaredAnnotation(EnumArgument.class);
+
+            for (final MapPair pair : annotation.mapping()) {
+                if (!stringIsValidEnum(field.getType(), pair.enumValue())) {
+                    final String message = String.format("Enum field %s has incorrect mapping value: %s", field.getName(), pair.enumValue());
+                    throw new ClassNotCorrectException(message);
+                }
+            }
+        }
+
+    }
+
     private static void checkFields(final Field[] fields) {
-        /// Await new types
         checkTypeField(fields, BoolArgument.class, boolean.class);
         checkTypeField(fields, EnumArgument.class, Enum.class);
+        checkEnums(fields);
     }
 
 
@@ -158,11 +187,11 @@ public class ArgumentParser {
             constructor.setAccessible(true);
             return constructor.newInstance();
         } catch (final InstantiationException e) {
-            throw new ClassNotCorrectException("@ArgumentsContainer must be class");
+            throw new ClassNotCorrectException("@Container must be class");
         } catch (final InvocationTargetException e) {
-            throw new ClassNotCorrectException("Constructor of @ArgumentsContainer mustn't throw any exceptions");
+            throw new ClassNotCorrectException("Constructor of @Container mustn't throw any exceptions");
         } catch (final NoSuchMethodException e) {
-            throw new ClassNotCorrectException("@ArgumentsContainer must have constructor without parameters");
+            throw new ClassNotCorrectException("@Container must have constructor without parameters");
         } catch (final IllegalAccessException e) {
             throw new AssertionError("Not expected error");
         }
@@ -206,19 +235,24 @@ public class ArgumentParser {
 
                     // Fix: Clean this piece of code..
                     final EnumArgument ann = field.getDeclaredAnnotation(EnumArgument.class);
-                    for (final MapPair mapPair : ann.array()) {
-                        if (value.equals(mapPair.key())) {
-                            try {
-                                final Method valueOfMethod = ann.enumClass().getMethod("valueOf", String.class);
-                                valueOfMethod.setAccessible(true);
-                                field.set(obj, valueOfMethod.invoke(null, mapPair.enumValue()));
+                    for (final MapPair mapPair : ann.mapping()) {
 
-                            } catch (final NoSuchMethodException | InvocationTargetException ignored) {
-                                throw new AssertionError("Not expected error in calling valueOf method of Enum");
-                            }
+                        if (!value.equals(mapPair.key())) {
+                            continue;
+                        }
+
+
+                        try {
+                            final Method method = field.getType().getMethod("valueOf", String.class);
+                            method.setAccessible(true);
+                            field.set(obj, method.invoke(null, mapPair.enumValue()));
+                            return;
+                        } catch (final NoSuchMethodException | InvocationTargetException ignored) {
+                            throw new AssertionError("Not expected error in calling method valueOf of Enum");
                         }
                     }
 
+                    /// Come here if value of enum flag not correct
                     throw new ArgumentParserException(getMessageError(field));
 
                 } else {
@@ -226,10 +260,10 @@ public class ArgumentParser {
                     throw new ClassNotCorrectException(message);
                 }
 
-            } catch (final NumberFormatException e) {
+            } catch (final NumberFormatException ignored) {
                 final String message = String.format("%s\nBut argument was: %s", getMessageError(field), value);
                 throw new ArgumentParserException(message);
-            } catch (final IllegalAccessException e) {
+            } catch (final IllegalAccessException ignored) {
                 /// Not expected because accessible is true
                 throw new AssertionError("Not expected error while set field");
             }

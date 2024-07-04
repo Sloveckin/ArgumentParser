@@ -9,8 +9,6 @@ import java.lang.annotation.Target;
 @Target(ElementType.FIELD)
 public @interface EnumArgument {
     String value();
-    Class<? extends Enum<?>> enumClass();
     String messageError();
-
-    MapPair[] array();
+    MapPair[] mapping();
 }
