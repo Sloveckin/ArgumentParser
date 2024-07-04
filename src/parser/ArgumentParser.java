@@ -214,8 +214,8 @@ public class ArgumentParser {
     }
 
 
-    private static void setObjectFields(final Object obj, final Container container) throws ArgumentParserException {
-        for (Map.Entry<Field, String> pair : container.notFlags.entrySet()) {
+    private static void setObjectFields(final Object obj, final Map<Field, String> map) throws ArgumentParserException {
+        for (Map.Entry<Field, String> pair : map.entrySet()) {
             final Field field = pair.getKey();
             final String value = pair.getValue();
             final Class<?> type = field.getType();
@@ -281,9 +281,22 @@ public class ArgumentParser {
         final Object obj = createObject(clazz);
 
         final Container container = createContainer(stringToField, args);
-        setObjectFields(obj, container);
+        setObjectFields(obj, container.notFlags);
+        setObjectBooleans(obj, container.flags);
 
         return obj;
+    }
+
+    private static void setObjectBooleans(final Object obj, final Map<Field, Boolean> flags) {
+        for (Map.Entry<Field, Boolean> pair : flags.entrySet()) {
+            final Field field = pair.getKey();
+            field.setAccessible(true);
+            try {
+                field.setBoolean(obj, pair.getValue());
+            } catch (final IllegalAccessException e) {
+                throw new AssertionError("Not expected error. Cause: " + e.getCause());
+            }
+        }
     }
 
     private record Container(Map<Field, String> notFlags, Map<Field, Boolean> flags) {
