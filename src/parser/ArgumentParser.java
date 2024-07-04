@@ -22,6 +22,8 @@ public class ArgumentParser {
             EnumArgument.class
     );
 
+    private static final List<Class<?>> allSupportPrimitives = List.of(String.class, int.class, long.class, float.class, double.class);
+
     private ArgumentParser() {
 
     }
@@ -47,6 +49,15 @@ public class ArgumentParser {
         }
     }
 
+    private static void checkTypeAndAnnotation(final Set<Field> fields) {
+        for (final Field field : fields) {
+            final Class<?> type = field.getType();
+            if (allSupportPrimitives.stream().noneMatch(clazz -> clazz.equals(type))) {
+                final String message = String.format("Field %s with type %s can't be annotated with @Argument", field.getName(), type.getName());
+                throw new ClassNotCorrectException(message);
+            }
+        }
+    }
 
     private static boolean stringIsValidEnum(final Class<?> clazz, final String str) {
         try {
@@ -87,6 +98,10 @@ public class ArgumentParser {
         final Set<Field> enumFields = filterFieldByAnnotation(fields, EnumArgument.class);
         checkTypeField(enumFields, EnumArgument.class, Enum.class);
         checkEnums(enumFields);
+
+        final Set<Field> argumentFields = filterFieldByAnnotation(fields, Argument.class);
+        checkTypeAndAnnotation(argumentFields);
+
     }
 
 
@@ -272,6 +287,18 @@ public class ArgumentParser {
         }
     }
 
+    private static void setObjectBooleans(final Object obj, final Map<Field, Boolean> flags) {
+        for (Map.Entry<Field, Boolean> pair : flags.entrySet()) {
+            final Field field = pair.getKey();
+            field.setAccessible(true);
+            try {
+                field.setBoolean(obj, pair.getValue());
+            } catch (final IllegalAccessException e) {
+                throw new AssertionError("Not expected error. Cause: " + e.getCause());
+            }
+        }
+    }
+
     public static Object parseArguments(final Class<?> clazz, final String[] args) throws ArgumentParserException {
         handleClassAnnotation(clazz);
         final Field[] allFields = getAllFields(clazz);
@@ -285,18 +312,6 @@ public class ArgumentParser {
         setObjectBooleans(obj, container.flags);
 
         return obj;
-    }
-
-    private static void setObjectBooleans(final Object obj, final Map<Field, Boolean> flags) {
-        for (Map.Entry<Field, Boolean> pair : flags.entrySet()) {
-            final Field field = pair.getKey();
-            field.setAccessible(true);
-            try {
-                field.setBoolean(obj, pair.getValue());
-            } catch (final IllegalAccessException e) {
-                throw new AssertionError("Not expected error. Cause: " + e.getCause());
-            }
-        }
     }
 
     private record Container(Map<Field, String> notFlags, Map<Field, Boolean> flags) {
