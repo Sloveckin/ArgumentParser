@@ -263,7 +263,7 @@ public class ArgumentParser {
                 }
 
             } catch (final NumberFormatException ignored) {
-                final String message = String.format("%s\nBut argument was: %s", getMessageError(field), value);
+                final String message = String.format("%s\nValue was: %s", getMessageError(field), value);
                 throw new ArgumentParserException(message);
             } catch (final IllegalAccessException e) {
                 /// Not expected because accessible is true
