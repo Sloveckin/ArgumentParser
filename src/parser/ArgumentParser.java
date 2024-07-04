@@ -34,9 +34,8 @@ public class ArgumentParser {
     }
 
 
-    private static void checkTypeField(final Field[] fields, final Class<? extends Annotation> annotation, final Class<?> expectedType) {
-        final Set<Field> filterFields = Arrays.stream(fields).filter(field -> field.isAnnotationPresent(annotation)).collect(Collectors.toSet());
-        for (final Field field : filterFields) {
+    private static void checkTypeField(final Set<Field> fields, final Class<? extends Annotation> annotation, final Class<?> expectedType) {
+        for (final Field field : fields) {
             final Class<?> type = field.getType();
             /// We see on super class in case when clazz is enum
             if (type != expectedType && type.getSuperclass() != expectedType) {
@@ -61,10 +60,8 @@ public class ArgumentParser {
         }
     }
 
-    private static void checkEnums(final Field[] fields) {
-        final Set<Field> filterFields = Arrays.stream(fields).filter(field -> field.isAnnotationPresent(EnumArgument.class)).collect(Collectors.toSet());
-
-        for (final Field field : filterFields) {
+    private static void checkEnums(final Set<Field> fields) {
+        for (final Field field : fields) {
             final EnumArgument annotation = field.getDeclaredAnnotation(EnumArgument.class);
 
             for (final MapPair pair : annotation.mapping()) {
@@ -74,23 +71,25 @@ public class ArgumentParser {
                 }
             }
         }
-
     }
 
+    private static Set<Field> filterFieldByAnnotation(final Field[] fields, final Class<? extends Annotation> annotation) {
+        return Arrays.stream(fields).filter(field -> field.isAnnotationPresent(annotation)).collect(Collectors.toSet());
+    }
+
+
     private static void checkFields(final Field[] fields) {
-        checkTypeField(fields, BoolArgument.class, boolean.class);
-        checkTypeField(fields, EnumArgument.class, Enum.class);
-        checkEnums(fields);
+        final Set<Field> boolFields = filterFieldByAnnotation(fields, BoolArgument.class);
+        checkTypeField(boolFields, BoolArgument.class, boolean.class);
+
+        final Set<Field> enumFields = filterFieldByAnnotation(fields, EnumArgument.class);
+        checkTypeField(enumFields, EnumArgument.class, Enum.class);
+        checkEnums(enumFields);
     }
 
 
     private static boolean isNeedField(final Field field) {
-        for (final Class<? extends Annotation> ann : allAnnotations) {
-            if (field.isAnnotationPresent(ann)) {
-                return true;
-            }
-        }
-        return false;
+        return allAnnotations.stream().anyMatch(field::isAnnotationPresent);
     }
 
     private static Field[] getAllFields(final Class<?> clazz) {
@@ -108,9 +107,9 @@ public class ArgumentParser {
             final Annotation annotation = field.getDeclaredAnnotation(clazz);
             try {
                 return (String) clazz.getMethod("value").invoke(annotation);
-            } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException ignored) {
+            } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
                 /// In this situation we can catch Exception I think
-                throw new AssertionError("Not expected error");
+                throw new AssertionError("Not expected error. Cause: " + e.getCause());
             }
         }
 
@@ -193,7 +192,7 @@ public class ArgumentParser {
         } catch (final NoSuchMethodException e) {
             throw new ClassNotCorrectException("@Container must have constructor without parameters");
         } catch (final IllegalAccessException e) {
-            throw new AssertionError("Not expected error");
+            throw new AssertionError("Not expected error. Cause: " + e.getCause());
         }
     }
 
@@ -206,10 +205,10 @@ public class ArgumentParser {
                 final Annotation annotation = field.getDeclaredAnnotation(clazz);
                 return (String) clazz.getMethod("messageError").invoke(annotation);
             }
-        } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException ignored) {
-            throw new AssertionError("Not expected error");
+        } catch (IllegalAccessException | InvocationTargetException | NoSuchMethodException e) {
+            throw new AssertionError("Not expected error. Cause: " + e.getCause());
         }
-        throw new AssertionError("Not expected error");
+        throw new AssertionError("Not expected error. Cause: Field not annotated");
     }
 
 
@@ -220,7 +219,6 @@ public class ArgumentParser {
             final Class<?> type = field.getType();
             try {
                 field.setAccessible(true);
-
 
                 /// NOTE: how to fix this trash?
                 if (type == String.class) {
@@ -233,7 +231,7 @@ public class ArgumentParser {
                     field.set(obj, Long.parseLong(value));
                 } else if (type.getSuperclass() == Enum.class) {
 
-                    // Fix: Clean this piece of code..
+                    // Fix: Clean this piece of code...
                     final EnumArgument ann = field.getDeclaredAnnotation(EnumArgument.class);
                     for (final MapPair mapPair : ann.mapping()) {
 
@@ -247,8 +245,8 @@ public class ArgumentParser {
                             method.setAccessible(true);
                             field.set(obj, method.invoke(null, mapPair.enumValue()));
                             return;
-                        } catch (final NoSuchMethodException | InvocationTargetException ignored) {
-                            throw new AssertionError("Not expected error in calling method valueOf of Enum");
+                        } catch (final NoSuchMethodException | InvocationTargetException e) {
+                            throw new AssertionError("Not expected error. Cause: " + e.getCause());
                         }
                     }
 
@@ -263,9 +261,9 @@ public class ArgumentParser {
             } catch (final NumberFormatException ignored) {
                 final String message = String.format("%s\nBut argument was: %s", getMessageError(field), value);
                 throw new ArgumentParserException(message);
-            } catch (final IllegalAccessException ignored) {
+            } catch (final IllegalAccessException e) {
                 /// Not expected because accessible is true
-                throw new AssertionError("Not expected error while set field");
+                throw new AssertionError("Not expected error. Cause: " + e.getCause());
             }
         }
     }
