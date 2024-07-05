@@ -11,6 +11,7 @@ import java.lang.reflect.Field;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 public class ArgumentParser {
@@ -31,6 +32,15 @@ public class ArgumentParser {
             new AbstractMap.SimpleEntry<>(String.class, Argument.class),
             new AbstractMap.SimpleEntry<>(boolean.class, BoolArgument.class),
             new AbstractMap.SimpleEntry<>(Enum.class, EnumArgument.class)
+    );
+
+
+    private static final Map<Class<?>, Function<String, Object>> classToFunction = Map.ofEntries(
+            new AbstractMap.SimpleEntry<>(int.class, Integer::parseInt),
+            new AbstractMap.SimpleEntry<>(long.class, Long::parseLong),
+            new AbstractMap.SimpleEntry<>(float.class, Float::parseFloat),
+            new AbstractMap.SimpleEntry<>(double.class, Double::parseDouble),
+            new AbstractMap.SimpleEntry<>(String.class, str -> str)
     );
 
 
@@ -224,19 +234,9 @@ public class ArgumentParser {
             final Class<?> type = field.getType();
             try {
                 field.setAccessible(true);
-
-                /// NOTE: how to fix this trash?
-                if (type == String.class) {
-                    field.set(obj, value);
-                } else if (type == int.class) {
-                    field.set(obj, Integer.parseInt(value));
-                } else if (type == float.class) {
-                    field.set(obj, Float.parseFloat(value));
-                } else if (type == long.class) {
-                    field.set(obj, Long.parseLong(value));
-                } else if (type == double.class) {
-                    field.set(obj, Double.parseDouble(value));
-                } else if (type.getSuperclass() == Enum.class) {
+                if (classToFunction.containsKey(type)) {
+                    field.set(obj, classToFunction.get(type).apply(value));
+                } else {
 
                     // Fix: Clean this piece of code...
                     final EnumArgument ann = field.getDeclaredAnnotation(EnumArgument.class);
@@ -245,7 +245,6 @@ public class ArgumentParser {
                         if (!value.equals(mapPair.key())) {
                             continue;
                         }
-
 
                         try {
                             final Method method = field.getType().getMethod("valueOf", String.class);
@@ -259,9 +258,6 @@ public class ArgumentParser {
 
                     /// Come here if value of enum flag not correct
                     throw new ArgumentParserException(getMessageError(field));
-
-                } else {
-                    throw new AssertionError("Not expected error. Cause: type not correct");
                 }
 
             } catch (final NumberFormatException ignored) {
