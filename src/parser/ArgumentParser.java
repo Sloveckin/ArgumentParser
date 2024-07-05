@@ -22,7 +22,17 @@ public class ArgumentParser {
             EnumArgument.class
     );
 
-    private static final List<Class<?>> allSupportPrimitives = List.of(String.class, int.class, long.class, float.class, double.class);
+
+    private static final Map<Class<?>, Class<? extends Annotation>> mapping = Map.ofEntries(
+            new AbstractMap.SimpleEntry<>(int.class, Argument.class),
+            new AbstractMap.SimpleEntry<>(long.class, Argument.class),
+            new AbstractMap.SimpleEntry<>(float.class, Argument.class),
+            new AbstractMap.SimpleEntry<>(double.class, Argument.class),
+            new AbstractMap.SimpleEntry<>(String.class, Argument.class),
+            new AbstractMap.SimpleEntry<>(boolean.class, BoolArgument.class),
+            new AbstractMap.SimpleEntry<>(Enum.class, EnumArgument.class)
+    );
+
 
     private ArgumentParser() {
 
@@ -32,30 +42,6 @@ public class ArgumentParser {
         if (!clazz.isAnnotationPresent(annotations.Container.class)) {
             final String message = String.format("Class %s must have annotation @Container", clazz.getName());
             throw new ClassNotCorrectException(message);
-        }
-    }
-
-
-    private static void checkTypeField(final Set<Field> fields,
-                                       final Class<? extends Annotation> annotation,
-                                       final Class<?> expectedType) {
-        for (final Field field : fields) {
-            final Class<?> type = field.getType();
-            /// We see on super class in case when clazz is enum
-            if (type != expectedType && type.getSuperclass() != expectedType) {
-                final String message = String.format("Field %s must be %s, but it is %s.", field.getName(), annotation.getName(), type.getName());
-                throw new ClassNotCorrectException(message);
-            }
-        }
-    }
-
-    private static void checkTypeAndAnnotation(final Set<Field> fields) {
-        for (final Field field : fields) {
-            final Class<?> type = field.getType();
-            if (allSupportPrimitives.stream().noneMatch(clazz -> clazz.equals(type))) {
-                final String message = String.format("Field %s with type %s can't be annotated with @Argument", field.getName(), type.getName());
-                throw new ClassNotCorrectException(message);
-            }
         }
     }
 
@@ -86,22 +72,24 @@ public class ArgumentParser {
         }
     }
 
-    private static Set<Field> filterFieldByAnnotation(final Field[] fields, final Class<? extends Annotation> annotation) {
-        return Arrays.stream(fields).filter(field -> field.isAnnotationPresent(annotation)).collect(Collectors.toSet());
-    }
+    private static void checkFields1(final Field[] fields) {
+        for (final Field field : fields) {
+            final Class<?> type = field.getType();
+            Class<? extends Annotation> annotation;
+            if (type.isEnum()) {
+                annotation = mapping.get(type.getSuperclass());
+            } else {
+                annotation = mapping.get(type);
+            }
 
+            if (!field.isAnnotationPresent(annotation)) {
+                final String message = String.format("Field %s must be annotated with %s", field.getName(), annotation.getName());
+                throw new ClassNotCorrectException(message);
+            }
+        }
 
-    private static void checkFields(final Field[] fields) {
-        final Set<Field> boolFields = filterFieldByAnnotation(fields, BoolArgument.class);
-        checkTypeField(boolFields, BoolArgument.class, boolean.class);
-
-        final Set<Field> enumFields = filterFieldByAnnotation(fields, EnumArgument.class);
-        checkTypeField(enumFields, EnumArgument.class, Enum.class);
+        final Set<Field> enumFields = Arrays.stream(fields).filter(field -> field.isAnnotationPresent(EnumArgument.class)).collect(Collectors.toSet());
         checkEnums(enumFields);
-
-        final Set<Field> argumentFields = filterFieldByAnnotation(fields, Argument.class);
-        checkTypeAndAnnotation(argumentFields);
-
     }
 
 
@@ -273,8 +261,7 @@ public class ArgumentParser {
                     throw new ArgumentParserException(getMessageError(field));
 
                 } else {
-                    final String message = String.format("Type %s not supported. Field: %s", type.getName(), field.getName());
-                    throw new ClassNotCorrectException(message);
+                    throw new AssertionError("Not expected error. Cause: type not correct");
                 }
 
             } catch (final NumberFormatException ignored) {
@@ -302,7 +289,7 @@ public class ArgumentParser {
     public static Object parseArguments(final Class<?> clazz, final String[] args) throws ArgumentParserException {
         handleClassAnnotation(clazz);
         final Field[] allFields = getAllFields(clazz);
-        checkFields(allFields);
+        checkFields1(allFields);
 
         final Map<String, Field> stringToField = getMapStringToField(allFields);
         final Object obj = createObject(clazz);
