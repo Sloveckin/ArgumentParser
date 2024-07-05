@@ -98,7 +98,9 @@ public class ArgumentParser {
             }
         }
 
-        final Set<Field> enumFields = Arrays.stream(fields).filter(field -> field.isAnnotationPresent(EnumArgument.class)).collect(Collectors.toSet());
+        final Set<Field> enumFields = Arrays.stream(fields)
+                .filter(field -> field.isAnnotationPresent(EnumArgument.class))
+                .collect(Collectors.toSet());
         checkEnums(enumFields);
     }
 
@@ -282,7 +284,8 @@ public class ArgumentParser {
         }
     }
 
-    public static Object parseArguments(final Class<?> clazz, final String[] args) throws ArgumentParserException {
+    @SuppressWarnings("unchecked")
+    public static <T> T parseArguments(final Class<T> clazz, final String[] args) throws ArgumentParserException {
         handleClassAnnotation(clazz);
         final Field[] allFields = getAllFields(clazz);
         checkFields1(allFields);
@@ -294,7 +297,7 @@ public class ArgumentParser {
         setObjectFields(obj, container.notFlags);
         setObjectBooleans(obj, container.flags);
 
-        return obj;
+        return (T) obj;
     }
 
     private record Container(Map<Field, String> notFlags, Map<Field, Boolean> flags) {
