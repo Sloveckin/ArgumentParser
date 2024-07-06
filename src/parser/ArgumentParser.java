@@ -242,6 +242,7 @@ public class ArgumentParser {
 
                     // Fix: Clean this piece of code...
                     final EnumArgument ann = field.getDeclaredAnnotation(EnumArgument.class);
+                    boolean flag = true;
                     for (final MapPair mapPair : ann.mapping()) {
 
                         if (!value.equals(mapPair.key())) {
@@ -252,14 +253,17 @@ public class ArgumentParser {
                             final Method method = field.getType().getMethod("valueOf", String.class);
                             method.setAccessible(true);
                             field.set(obj, method.invoke(null, mapPair.enumValue()));
-                            return;
+                            flag = false;
+                            break;
                         } catch (final NoSuchMethodException | InvocationTargetException e) {
                             throw new AssertionError("Not expected error. Cause: " + e.getCause());
                         }
                     }
 
                     /// Come here if value of enum flag not correct
-                    throw new ArgumentParserException(getMessageError(field));
+                    if (flag) {
+                        throw new ArgumentParserException(getMessageError(field));
+                    }
                 }
 
             } catch (final NumberFormatException ignored) {
